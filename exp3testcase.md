@@ -1,65 +1,117 @@
+# Scaling zoom in and zoom out
+
 from google.colab import files
 files.upload()
-
-import cv2
+from PIL import Image
 import numpy as np
-from google.colab.patches import cv2_imshow
+import matplotlib.pyplot as plt
 
-def rotate_image(image, angle):
+# ----------------------------
+# Load & Display Image
+# ----------------------------
+img = Image.open("img.jpg")
+img_np = np.array(img)
+
+plt.imshow(img)
+plt.axis("off")
+plt.title("Original Image")
+plt.show()
+
+
+# ----------------------------
+# Nearest Neighbor Sampling
+# ----------------------------
+def sample_nearest(image, x, y):
     h, w = image.shape[:2]
-    matrix = cv2.getRotationMatrix2D((w/2, h/2), angle, 1)
-    return cv2.warpAffine(image, matrix, (w, h))
+    x = int(round(x))
+    y = int(round(y))
+    if 0 <= x < w and 0 <= y < h:
+        return image[y, x]
+    return np.array([0, 0, 0])
 
 
+# ----------------------------
+# Scaling Function
+# ----------------------------
 def scale_image(image, scale_x, scale_y):
-    return cv2.resize(image, None, fx=scale_x, fy=scale_y)
-
-
-def skew_image(image, skew_x, skew_y):
     h, w = image.shape[:2]
-    matrix = np.float32([
-        [1, skew_x, 0],
-        [skew_y, 1, 0]
-    ])
-    return cv2.warpAffine(image, matrix, (w, h))
+    new_h = int(h * scale_y)
+    new_w = int(w * scale_x)
+
+    output = np.zeros((new_h, new_w, 3), dtype=image.dtype)
+
+    for y in range(new_h):
+        for x in range(new_w):
+            src_x = x / scale_x
+            src_y = y / scale_y
+            output[y, x] = sample_nearest(image, src_x, src_y)
+
+    return output
 
 
-def affine_transform(image, pts_src, pts_dst):
-    matrix = cv2.getAffineTransform(pts_src, pts_dst)
-    return cv2.warpAffine(image, matrix, (image.shape[1], image.shape[0]))
+# ----------------------------
+# Zoom In (center crop + scale)
+# ----------------------------
+def zoom_in(image, zoom_factor):
+    h, w = image.shape[:2]
+
+    crop_h = int(h / zoom_factor)
+    crop_w = int(w / zoom_factor)
+
+    start_y = (h - crop_h) // 2
+    start_x = (w - crop_w) // 2
+
+    cropped = image[start_y:start_y + crop_h, start_x:start_x + crop_w]
+
+    return scale_image(cropped, zoom_factor, zoom_factor)
 
 
-def bilinear_transform(image, pts_src, pts_dst):
-    matrix = cv2.getPerspectiveTransform(pts_src, pts_dst)
-    return cv2.warpPerspective(image, matrix, (image.shape[1], image.shape[0]))
+# ----------------------------
+# Zoom Out (shrink + pad)
+# ----------------------------
+def zoom_out(image, zoom_factor):
+    h, w = image.shape[:2]
+
+    scaled = scale_image(image, 1 / zoom_factor, 1 / zoom_factor)
+
+    new_h, new_w = scaled.shape[:2]
+    output = np.zeros_like(image)
+
+    start_y = (h - new_h) // 2
+    start_x = (w - new_w) // 2
+
+    output[start_y:start_y + new_h, start_x:start_x + new_w] = scaled
+
+    return output
 
 
-image = cv2.imread("img.jpg")
+# ----------------------------
+# APPLY & DISPLAY
+# ----------------------------
 
-if image is None:
-    raise ValueError("Image not loaded. Please upload img.jpg")
+# Scaling
+scaled_img = scale_image(img_np, 1.5, 1.5)
+plt.imshow(scaled_img)
+plt.axis("off")
+plt.title("Scaled Image (1.5x)")
+plt.show()
 
+# Zoom In
+zoomed_in = zoom_in(img_np, 2)
+plt.imshow(zoomed_in)
+plt.axis("off")
+plt.title("Zoom In (2x)")
+plt.show()
 
-
-rotated = rotate_image(image, 45)
-cv2_imshow(rotated)
-
-scaled = scale_image(image, 1.5, 1.5)
-cv2_imshow(scaled)
-
-skewed = skew_image(image, 0.2, 0.1)
-cv2_imshow(skewed)
-
-src_affine = np.float32([[50, 50], [200, 50], [50, 200]])
-dst_affine = np.float32([[10, 100], [200, 50], [100, 250]])
-affine_img = affine_transform(image, src_affine, dst_affine)
-cv2_imshow(affine_img)
-
-src_persp = np.float32([[56, 65], [368, 52], [28, 387], [389, 390]])
-dst_persp = np.float32([[0, 0], [300, 0], [0, 300], [300, 300]])
-perspective_img = bilinear_transform(image, src_persp, dst_persp)
-cv2_imshow(perspective_img)
+# Zoom Out
+zoomed_out = zoom_out(img_np, 2)
+plt.imshow(zoomed_out)
+plt.axis("off")
+plt.title("Zoom Out (2x)")
+plt.show()
 
 # Output :
-<img width="386" height="457" alt="image" src="https://github.com/user-attachments/assets/0a4615f9-4983-4860-b61d-6d7736c64502" />
-<img width="235" height="199" alt="image" src="https://github.com/user-attachments/assets/cdf4362d-afdb-4f91-af01-54bd1995d88b" />
+<img width="278" height="429" alt="image" src="https://github.com/user-attachments/assets/1bbe4d9d-f679-4e33-9025-317ecd2a64bc" />
+<img width="272" height="419" alt="image" src="https://github.com/user-attachments/assets/0cafd02b-d7bf-4af2-ac51-6329e59d8120" />
+
+
